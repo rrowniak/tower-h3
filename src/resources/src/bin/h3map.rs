@@ -24,11 +24,10 @@ fn main() {
         std::process::exit(1);
     }
     match args[1].as_str() {
-        "show" => {
-            if let Err(e) = map_reader::load_h3m(std::path::Path::new(&args[2])) {
-                panic!("Cant load map {}: {e}", &args[2]);
-            }
-        }
+        "show" => match map_reader::load_h3m(std::path::Path::new(&args[2])) {
+            Ok(map) => println!("Map: {map:?}"),
+            Err(e) => panic!("Cant load map {}: {e}", &args[2]),
+        },
         s => {
             panic!("Unknown subcommand {s}");
         }

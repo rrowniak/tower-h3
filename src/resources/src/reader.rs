@@ -36,12 +36,20 @@ impl BinaryDataReader {
         Ok(buffer[0])
     }
 
-    // Read a single u16 assuming little-endian byte order
-    pub fn read_u16_le(&mut self) -> io::Result<u16> {
-        let mut buffer = [0u8; 2];
-        self.cursor.read_exact(&mut buffer)?;
-        Ok((buffer[1] as u16) << 8 | buffer[0] as u16)
+    pub fn read_i8(&mut self) -> io::Result<i8> {
+        Ok(self.read_u8()? as i8)
     }
+
+    pub fn read_bool(&mut self) -> io::Result<bool> {
+        Ok(self.read_u8()? != 0)
+    }
+
+    // Read a single u16 assuming little-endian byte order
+    // pub fn read_u16_le(&mut self) -> io::Result<u16> {
+    //     let mut buffer = [0u8; 2];
+    //     self.cursor.read_exact(&mut buffer)?;
+    //     Ok((buffer[1] as u16) << 8 | buffer[0] as u16)
+    // }
 
     // Read a single u32 assuming little-endian byte order
     pub fn read_u32_le(&mut self) -> io::Result<u32> {
@@ -53,24 +61,53 @@ impl BinaryDataReader {
             | buffer[0] as u32)
     }
 
-    // Read a single f32 assuming little-endian byte order
-    pub fn read_f32_le(&mut self) -> io::Result<f32> {
-        let value = self.read_u32_le()?;
-        Ok(f32::from_bits(value))
+    pub fn read_i32_le(&mut self) -> io::Result<i32> {
+        Ok(self.read_u32_le()? as i32)
     }
 
+    // Read a single f32 assuming little-endian byte order
+    // pub fn read_f32_le(&mut self) -> io::Result<f32> {
+    //     let value = self.read_u32_le()?;
+    //     Ok(f32::from_bits(value))
+    // }
+
     // Read a single u64 assuming little-endian byte order
-    pub fn read_u64_le(&mut self) -> io::Result<u64> {
-        let mut buffer = [0u8; 8];
+    // pub fn read_u64_le(&mut self) -> io::Result<u64> {
+    //     let mut buffer = [0u8; 8];
+    //     self.cursor.read_exact(&mut buffer)?;
+    //     Ok((buffer[7] as u64) << 56
+    //         | (buffer[6] as u64) << 48
+    //         | (buffer[5] as u64) << 40
+    //         | (buffer[4] as u64) << 32
+    //         | (buffer[3] as u64) << 24
+    //         | (buffer[2] as u64) << 16
+    //         | (buffer[1] as u64) << 8
+    //         | buffer[0] as u64)
+    // }
+
+    pub fn read_byte_array(&mut self, len: usize) -> io::Result<Vec<u8>> {
+        let mut buffer = vec![0u8; len];
         self.cursor.read_exact(&mut buffer)?;
-        Ok((buffer[7] as u64) << 56
-            | (buffer[6] as u64) << 48
-            | (buffer[5] as u64) << 40
-            | (buffer[4] as u64) << 32
-            | (buffer[3] as u64) << 24
-            | (buffer[2] as u64) << 16
-            | (buffer[1] as u64) << 8
-            | buffer[0] as u64)
+        Ok(buffer)
+    }
+
+    pub fn read_string_le(&mut self) -> io::Result<String> {
+        let str_len = self.read_u32_le()?;
+        let str_buf = self.read_byte_array(str_len as usize)?;
+        // TODO: proper text encoding needed. For H3 maps, apparently this is not utf8
+        // maybe ISO-8859-2 (Latin-2) or Windows-1250?
+        Ok(String::from_utf8_lossy(&str_buf).into_owned())
+        // match String::from_utf8(str_buf.clone()) {
+        //     Ok(s) => Ok(s),
+        //     Err(e) => Err(io::Error::new(
+        //         io::ErrorKind::Other,
+        //         format!("converting {str_buf:?} to utf8 string error: {e}"),
+        //     )),
+        // }
+    }
+
+    pub fn skip_n(&mut self, n: usize) {
+        self.cursor.set_position(self.cursor.position() + n as u64)
     }
 }
 
