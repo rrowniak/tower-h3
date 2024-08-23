@@ -3,4 +3,5 @@ pub mod pcx2bmp;
 pub mod bmp;
 pub mod map_reader;
 pub mod map_structs;
+pub mod map_obj_type;
 mod reader;

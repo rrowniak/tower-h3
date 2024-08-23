@@ -64,19 +64,53 @@ fn parse_map(reader: &mut BinaryDataReader) -> io::Result<Map> {
     };
     let players = parse_player_info(reader, &ctx)?;
     // read victory loss conditions
+    let win_loss_cond = parse_win_loss_cond(reader, &ctx)?;
+    // println!("{win_loss_cond:?}");
     // read team info
-    // read all allowed heroes
-    // read disposed heroes
+    let team_info = parse_team_info(reader, &ctx)?;
+    // println!("{team_info:?}");
+    // read all allowed heroes & read disposed heroes
+    let heroes_def = parse_heroes_def(reader, &ctx)?;
+    // println!("{heroes_def:?}");
     // read map options
+    let map_options = parse_map_options(reader, &ctx)?;
+    // println!("{map_options:?}");
     // read allowed artifacts
+    let allowed_artifacts = parse_allowed_artifacts(reader, &ctx)?;
     // read allowed spell abilities
+    let allowed_spells = parse_allowed_spells(reader, &ctx)?;
     // read rumors
+    let rumors = parse_rumors(reader, &ctx)?;
     // read predefined heroes
+    let predefined_heroes = parse_predefined_heroes(reader, &ctx)?;
+    // println!("{predefined_heroes:?}");
     // read terrain
+    let levels_no = if info.two_levels { 2 } else { 1 };
+    let map_size = info.map_dimension as usize;
+    let terrains = parse_terrain(reader, &ctx, levels_no, map_size)?;
     // read object templates
+    let object_templates = parse_object_templates(reader, &ctx)?;
+    // println!("{object_templates:?}");
     // read objects
+    let objects = parse_objects(reader, &ctx, &object_templates)?;
     // read events
-    Ok(Map { info, players })
+    let events = parse_events(reader, &ctx)?;
+    Ok(Map {
+        info,
+        players,
+        win_loss_cond,
+        team_info,
+        heroes_def,
+        map_options,
+        allowed_artifacts,
+        allowed_spells,
+        rumors,
+        predefined_heroes,
+        terrains,
+        object_templates,
+        objects,
+        events,
+    })
 }
 
 fn parse_player_info(
@@ -151,11 +185,7 @@ fn parse_player_info(
                 // Type of town: FF - Random town, others correspond to 0 - Castle etc.
                 reader.skip_n(1);
             }
-            main_town_position = Some((
-                reader.read_u8()? as usize,
-                reader.read_u8()? as usize,
-                reader.read_u8()? as usize,
-            ));
+            main_town_position = Some(read_coord(reader)?);
         } else {
             main_town_position = None;
         }
@@ -205,6 +235,611 @@ fn parse_player_info(
     Ok(players)
 }
 
+fn parse_win_loss_cond(
+    reader: &mut BinaryDataReader,
+    ctx: &ParsingContext,
+) -> io::Result<WinLossCond> {
+    use SpecialVictoryCondition::*;
+    let vict_code = reader.read_u8()?;
+    let (allow_normal_victory, victory_cond_applies_to_comp) = if vict_code != 0xff {
+        (reader.read_bool()?, reader.read_bool()?)
+    } else {
+        (false, false)
+    };
+
+    let special_victory_cond = match vict_code {
+        0 => {
+            // artifact
+            let artifact_code = match read_artifact_id(reader, ctx)? {
+                Some(id) => id,
+                None => {
+                    return Err(gen_error(
+                        "Parsing artifact id for special victory condition failed",
+                    ))
+                }
+            };
+            Some(AcquireArtifact { artifact_code })
+        }
+        1 => {
+            // gather creatures
+            let unit_code = if ctx.level_AB {
+                reader.read_u16_le()?
+            } else {
+                reader.read_u8()? as u16
+            };
+            let amount = reader.read_u32_le()?;
+            Some(AccumulateCreatures { unit_code, amount })
+        }
+        2 => {
+            // gather resources
+            let resource = match Resource::from(reader.read_u8()?) {
+                Some(r) => r,
+                None => return Err(gen_error("Unknown resource code id")),
+            };
+            let amount = reader.read_u32_le()?;
+            Some(AccumulateResources { resource, amount })
+        }
+        3 => {
+            // build city
+            let town_coord = read_coord(reader)?;
+            let hall_level = match reader.read_u8()? {
+                0 => Building::Town,
+                1 => Building::City,
+                2 => Building::Capitol,
+                _ => return Err(gen_error("can't decode hall level")),
+            };
+            let castle_level = match reader.read_u8()? {
+                0 => Building::Fort,
+                1 => Building::Citadel,
+                2 => Building::Castle,
+                _ => return Err(gen_error("can't decode hall level")),
+            };
+            Some(UpgradeTown {
+                town_coord,
+                hall_level,
+                castle_level,
+            })
+        }
+        4 => {
+            // build grail
+            let town_coord = read_coord(reader)?;
+            Some(BuildGrail { town_coord })
+        }
+        5 => {
+            // defeat hero
+            let hero_coord = read_coord(reader)?;
+            Some(DefeatHero { hero_coord })
+        }
+        6 => {
+            // capture town
+            let town_coord = read_coord(reader)?;
+            Some(CaptureTown { town_coord })
+        }
+        7 => {
+            // defeat monsters
+            let monster_coord = read_coord(reader)?;
+            Some(DefeatMonster { monster_coord })
+        }
+        8 => {
+            // flag all dwellings
+            Some(FlagAllCreatureDwellings)
+        }
+        9 => {
+            // flag all mines
+            Some(FlagAllMines)
+        }
+        10 => {
+            // transport artifact
+            let artifact_code = match read_artifact_id(reader, ctx)? {
+                Some(id) => id,
+                None => {
+                    return Err(gen_error(
+                        "parsing artifact id for 'transport artifact' failed",
+                    ))
+                }
+            };
+            let artifact_coord = read_coord(reader)?;
+            Some(TransportArtifact {
+                artifact_code,
+                artifact_coord,
+            })
+        }
+        11 => {
+            // hota eliminate all monsters
+            Some(EliminateAllMonsters)
+        }
+        12 => {
+            // hota survive for N days
+            let limit_days = reader.read_u32_le()?;
+            Some(SurviveNDays { limit_days })
+        }
+        0xff => None,
+        _ => None,
+    };
+
+    let loss_cond = reader.read_u8()?;
+    use SpecialLossCondition::*;
+    let special_loss_cond = match loss_cond {
+        0 => {
+            // loss town
+            let town_coord = read_coord(reader)?;
+            Some(LossTown { town_coord })
+        }
+        1 => {
+            // loss hero
+            let hero_coord = read_coord(reader)?;
+            Some(LossHero { hero_coord })
+        }
+        2 => {
+            // time expires
+            let limit_days = reader.read_u16_le()? as u32;
+            Some(TimeExpires { limit_days })
+        }
+        0xff => None,
+        _ => None,
+    };
+
+    Ok(WinLossCond {
+        allow_normal_victory,
+        victory_cond_applies_to_comp,
+        special_victory_cond,
+        special_loss_cond,
+    })
+}
+
+fn parse_team_info(reader: &mut BinaryDataReader, _ctx: &ParsingContext) -> io::Result<TeamInfo> {
+    let team_num = reader.read_u8()?;
+    let mut team_info = TeamInfo::new();
+    if team_num > 0 {
+        use Player::*;
+        for player in [Red, Blue, Tan, Green, Orange, Purple, Teal, Pink] {
+            let team_num = reader.read_u8()?;
+            team_info.add(team_num, player);
+        }
+    }
+    Ok(team_info)
+}
+
+fn parse_heroes_def(reader: &mut BinaryDataReader, ctx: &ParsingContext) -> io::Result<HeroesDef> {
+    // read allowed heroes
+    let allowed_heroes = if ctx.level_HOTA0 {
+        let heroes_count = reader.read_u32_le()?;
+        assert!(heroes_count < 256);
+        map_bits_to_numbers(reader, heroes_count as u8)?
+    } else {
+        map_bits_to_numbers(reader, ctx.heroes_count as u8)?
+    };
+    let mut reserved_for_campaign = Vec::new();
+    if ctx.level_AB {
+        let heroes_no = reader.read_u32_le()?;
+        for _ in 0..heroes_no {
+            let hero_id = reader.read_u8()?;
+            reserved_for_campaign.push(hero_id);
+        }
+    }
+    // read disposed heroes
+    let mut disposed_heroes = Vec::new();
+    if ctx.level_SOD {
+        let disp_no = reader.read_u8()?;
+        for _ in 0..disp_no {
+            let id = reader.read_u8()?;
+            let portrait_id = Some(reader.read_u8()?);
+            let name = reader.read_string_le()?;
+            let hero = Hero {
+                id,
+                portrait_id,
+                name,
+            };
+            use Player::*;
+            let players =
+                map_bits_to_objects(reader, &[Red, Blue, Tan, Green, Orange, Purple, Teal, Pink])?;
+            disposed_heroes.push((hero, players));
+        }
+    }
+    Ok(HeroesDef {
+        allowed_heroes,
+        reserved_for_campaign,
+        disposed_heroes,
+    })
+}
+
+fn parse_map_options(
+    reader: &mut BinaryDataReader,
+    ctx: &ParsingContext,
+) -> io::Result<MapOptions> {
+    reader.skip_n(31);
+    let allow_special_months = if ctx.level_HOTA0 {
+        let ret = reader.read_bool()?;
+        reader.skip_n(3);
+        ret
+    } else {
+        false
+    };
+    if ctx.level_HOTA1 {
+        // unknown part
+        let _ = reader.read_u8()?;
+        reader.skip_n(5);
+    }
+    let round_limit = if ctx.level_HOTA3 {
+        Some(reader.read_u32_le()?)
+    } else {
+        None
+    };
+    Ok(MapOptions {
+        allow_special_months,
+        round_limit,
+    })
+}
+
+fn parse_allowed_artifacts(
+    reader: &mut BinaryDataReader,
+    ctx: &ParsingContext,
+) -> io::Result<AllowedArtifacts> {
+    let artifacts = if ctx.level_AB {
+        if ctx.level_HOTA0 {
+            let cnt = reader.read_u32_le()? as u8;
+            map_bits_to_numbers(reader, cnt)?
+                .iter()
+                .map(|a| ArtifactId(*a as u32))
+                .collect::<Vec<_>>()
+        } else {
+            map_bits_to_numbers(reader, ctx.artifacts_count as u8)?
+                .iter()
+                .map(|a| ArtifactId(*a as u32))
+                .collect::<Vec<_>>()
+        }
+    } else {
+        Vec::new()
+    };
+    Ok(AllowedArtifacts { artifacts })
+}
+
+fn parse_allowed_spells(
+    reader: &mut BinaryDataReader,
+    ctx: &ParsingContext,
+) -> io::Result<AllowedSpells> {
+    let (spells, skills) = if ctx.level_SOD {
+        (
+            map_bits_to_numbers(reader, ctx.spells_count as u8)?,
+            map_bits_to_numbers(reader, ctx.skills_count as u8)?,
+        )
+    } else {
+        (Vec::new(), Vec::new())
+    };
+    Ok(AllowedSpells { spells, skills })
+}
+
+fn parse_rumors(reader: &mut BinaryDataReader, _ctx: &ParsingContext) -> io::Result<Rumors> {
+    let cnt = reader.read_u32_le()?;
+    let mut rumors = Vec::new();
+    for _ in 0..cnt {
+        let name = reader.read_string_le()?;
+        let rumor = reader.read_string_le()?;
+        rumors.push(Rumor { name, rumor });
+    }
+    Ok(Rumors { rumors })
+}
+
+fn parse_predefined_heroes(
+    reader: &mut BinaryDataReader,
+    ctx: &ParsingContext,
+) -> io::Result<Vec<PredefinedHero>> {
+    let mut predefined_heroes = Vec::new();
+    if !ctx.level_SOD {
+        return Ok(predefined_heroes);
+    }
+    let heroes_cnt = if ctx.level_HOTA0 {
+        reader.read_u32_le()? as usize
+    } else {
+        ctx.heroes_count
+    };
+    for id in 0..heroes_cnt {
+        let custom = reader.read_bool()?;
+        if !custom {
+            continue;
+        }
+        let experience = if reader.read_bool()? {
+            reader.read_u32_le()?
+        } else {
+            0
+        };
+        let secondary_skills = if reader.read_bool()? {
+            let amount = reader.read_u32_le()?;
+            let mut ret = Vec::new();
+            for _ in 0..amount {
+                let id = reader.read_u8()? as u32;
+                let level = match SecSkillLevel::from(reader.read_u8()?) {
+                    Some(l) => l,
+                    None => return Err(gen_error("parsing secondary skill error")),
+                };
+                ret.push(SecSkill { id, level });
+            }
+            ret
+        } else {
+            Vec::new()
+        };
+        let artifacts = if reader.read_bool()? {
+            let mut ret = Vec::new();
+            for slot in 0..ctx.artifact_slots_count {
+                let artifact_id = match read_artifact_id(reader, ctx)? {
+                    Some(id) => id,
+                    None => continue,
+                };
+                ret.push(HeroesArtifact {
+                    artifact_id,
+                    slot_id: slot as u32,
+                })
+            }
+            ret
+        } else {
+            Vec::new()
+        };
+        let mut artifacts_in_bag = Vec::new();
+        let amount = reader.read_u16_le()?;
+        for _ in 0..amount {
+            let artifact_id = match read_artifact_id(reader, ctx)? {
+                Some(id) => id,
+                None => continue,
+            };
+            artifacts_in_bag.push(artifact_id);
+        }
+        let custom_bio = if reader.read_bool()? {
+            Some(reader.read_string_le()?)
+        } else {
+            None
+        };
+        let gender = match reader.read_u8()? {
+            0 => Some(Gender::Male),
+            1 => Some(Gender::Female),
+            _ => None,
+        };
+        let custom_spells = if reader.read_bool()? {
+            // read custom spells
+            map_bits_to_numbers(reader, ctx.spells_count as u8)?
+        } else {
+            Vec::new()
+        };
+        let custom_primary_skills = if reader.read_bool()? {
+            Some(PrimarySkills {
+                attack: reader.read_u8()? as u32,
+                defence: reader.read_u8()? as u32,
+                spell_power: reader.read_u8()? as u32,
+                knowledge: reader.read_u8()? as u32,
+            })
+        } else {
+            None
+        };
+        predefined_heroes.push(PredefinedHero {
+            id: id as u32,
+            experience,
+            secondary_skills,
+            artifacts,
+            artifacts_in_bag,
+            custom_bio,
+            gender,
+            custom_spells,
+            custom_primary_skills,
+        })
+    }
+    Ok(predefined_heroes)
+}
+
+fn read_coord(reader: &mut BinaryDataReader) -> io::Result<MapCoord> {
+    Ok(MapCoord::from(
+        reader.read_u8()?,
+        reader.read_u8()?,
+        reader.read_u8()?,
+    ))
+}
+
+fn parse_terrain(
+    reader: &mut BinaryDataReader,
+    _ctx: &ParsingContext,
+    levels_no: usize,
+    map_size: usize,
+) -> io::Result<Vec<Terrain>> {
+    let mut terrains = Vec::new();
+    for _ in 0..levels_no {
+        let mut tiles = vec![vec![TerrainTile::default(); map_size]; map_size];
+        for x in 0..map_size {
+            for y in 0..map_size {
+                let code = reader.read_u8()?;
+                tiles[x][y].surface_type = match Surface::from(code) {
+                    Some(t) => t,
+                    None => return Err(gen_error(&format!("parse_terrain: cannot convert surface type - got {code} which is incorrect"))),
+                };
+                tiles[x][y].surface_picture = reader.read_u8()?;
+                tiles[x][y].river_type = RiverType::from(reader.read_u8()?);
+                tiles[x][y].river_direction = reader.read_u8()?;
+                tiles[x][y].road_type = RoadType::from(reader.read_u8()?);
+                tiles[x][y].road_direction = reader.read_u8()?;
+                tiles[x][y].mirroring_flags = reader.read_u8()?;
+            }
+        }
+        terrains.push(tiles);
+    }
+    Ok(terrains)
+}
+
+fn parse_object_templates(
+    reader: &mut BinaryDataReader,
+    _ctx: &ParsingContext,
+) -> io::Result<Vec<ObjectTemplate>> {
+    let mut ret = Vec::new();
+    let amount = reader.read_u32_le()?;
+    for _ in 0..amount {
+        let animation_file = reader.read_string_le()?;
+        // transit properties
+        let mut block_bits = [0u8; 6];
+        let mut visit_bits = [0u8; 6];
+        for b in block_bits.iter_mut() {
+            *b = reader.read_u8()?;
+        }
+        for b in visit_bits.iter_mut() {
+            *b = reader.read_u8()?;
+        }
+        let mut transit_matrix = [[TileTransitProperty::default(); 8]; 6];
+        for (i, row) in transit_matrix.iter_mut().enumerate() {
+            for (j, trans) in row.iter_mut().enumerate() {
+                // in h3m counted from the bottom right corner
+                // remap to be counted from the top left corner
+                let i = 5 - i;
+                let j = 7 - j;
+                if (block_bits[i] >> j) & 0x01 == 0 {
+                    *trans = TileTransitProperty::TransitBlocked;
+                }
+                if (visit_bits[i] >> j) & 0x01 == 1 {
+                    *trans = TileTransitProperty::Visitable;
+                }
+            }
+        }
+        // what kinds of landscape it can be put on - skip that
+        let _ = reader.read_u16_le()?;
+        // terrain mask
+        let terrain_mask = reader.read_u16_le()?;
+        let mut allowed_terrains = Vec::new();
+        for bit_no in 0..16 {
+            if terrain_mask & (1 << bit_no) != 0 {
+                if let Some(s) = Surface::from(bit_no) {
+                    allowed_terrains.push(s);
+                }
+            }
+        }
+        let id = reader.read_u32_le()?;
+        let subid = reader.read_u32_le()?;
+        let obj_kind = ObjectKind::from(reader.read_u8()?);
+        let render_priority = reader.read_u8()?;
+        reader.skip_n(16);
+        ret.push(ObjectTemplate {
+            animation_file,
+            transit_matrix,
+            allowed_terrains,
+            id,
+            subid,
+            obj_kind,
+            render_priority,
+        });
+    }
+    Ok(ret)
+}
+
+fn parse_objects(
+    reader: &mut BinaryDataReader,
+    ctx: &ParsingContext,
+    templates: &[ObjectTemplate],
+) -> io::Result<Vec<Object>> {
+    let mut ret = Vec::new();
+    let amount = reader.read_u32_le()?;
+    use crate::map_obj_type::ObjectType;
+    for _ in 0..amount {
+        reader.dump_hex(0, 16 * 4)?;
+        let position = read_coord(reader)?;
+        let obj_templ_id = reader.read_u32_le()?;
+        reader.skip_n(5);
+        let obj_id = templates[obj_templ_id as usize].id;
+        println!("parsing {obj_id} at {position:?}...");
+        let mut obj_type = match ObjectType::from(obj_id) {
+            Some(o) => o,
+            None => {
+                return Err(gen_error(&format!(
+                    "parse_objects: parsing object type failed, got {obj_templ_id}"
+                )))
+            }
+        };
+        use crate::map_obj_type::ObjectType::*;
+        match obj_type {
+            Monster(ref mut m)
+            | RandomMonster(ref mut m)
+            | RandomMonsterL1(ref mut m)
+            | RandomMonsterL2(ref mut m)
+            | RandomMonsterL3(ref mut m)
+            | RandomMonsterL4(ref mut m)
+            | RandomMonsterL5(ref mut m)
+            | RandomMonsterL6(ref mut m)
+            | RandomMonsterL7(ref mut m) => {
+                // read moster data
+                if ctx.level_AB {
+                    m.id = reader.read_u32_le()?;
+                }
+                m.amount = reader.read_u16_le()? as u32;
+                println!("amount = {}", m.amount);
+                m.character = reader.read_u8()?;
+                if reader.read_bool()? {
+                    m.message = Some(reader.read_string_le()?);
+                    m.resources = Some(read_resource_pack(reader, ctx)?);
+                    m.artifact = read_artifact_id(reader, ctx)?;
+                } else {
+                    m.message = None;
+                }
+                m.never_flees = reader.read_bool()?;
+                m.growing_team = !reader.read_bool()?;
+                reader.skip_n(2);
+                if ctx.level_HOTA3 {
+                    m.aggression_factor = match reader.read_u32_le()? {
+                        0xffffffff => None,
+                        v => Some(v),
+                    };
+                    m.join_only_for_money = Some(reader.read_bool()?);
+                    m.join_percentage = Some(reader.read_u32_le()?);
+                    m.upgraded_creatures = match reader.read_u32_le()? {
+                        0xffffffff => None,
+                        v => Some(v),
+                    };
+                    m.creatures_on_battle = match reader.read_u32_le()? {
+                        0xffffffff => None,
+                        v => Some(v),
+                    };
+                }
+                println!("{m:?}");
+            }
+
+            Event(ref mut ev) => {}
+            _ => {}
+        }
+        ret.push(Object {
+            position,
+            obj_templ_id,
+            obj_type,
+        });
+    }
+    Ok(ret)
+}
+
+fn parse_events(reader: &mut BinaryDataReader, _ctx: &ParsingContext) -> io::Result<Vec<Event>> {
+    let mut ret = Vec::new();
+    Ok(ret)
+}
+
+fn read_artifact_id(
+    reader: &mut BinaryDataReader,
+    ctx: &ParsingContext,
+) -> io::Result<Option<ArtifactId>> {
+    if ctx.level_AB {
+        let id = reader.read_u16_le()? as u32;
+        if id == 0xffff {
+            return Ok(None);
+        }
+        Ok(Some(ArtifactId(id)))
+    } else {
+        let id = reader.read_u8()? as u32;
+        if id == 0xff {
+            return Ok(None);
+        }
+        Ok(Some(ArtifactId(id)))
+    }
+}
+
+fn read_resource_pack(
+    reader: &mut BinaryDataReader,
+    _ctc: &ParsingContext,
+) -> io::Result<ResourcePack> {
+    let mut rpack = [0; 7];
+    for r in rpack.iter_mut() {
+        *r = reader.read_u32_le()?;
+    }
+    Ok(ResourcePack(rpack))
+}
+
 /// Read a byte and collect an item from `object`
 /// if corresponding bit is set
 fn map_bits_to_objects<T: Copy + Clone>(
@@ -226,6 +861,22 @@ fn map_bits_to_objects<T: Copy + Clone>(
     Ok(ret)
 }
 
+/// E.g. reader.read_u8()->001100101 ==> [2, 3, 6, 8]
+fn map_bits_to_numbers(reader: &mut BinaryDataReader, read_up_to: u8) -> io::Result<Vec<u8>> {
+    let mut ret = Vec::new();
+    let mut mask = 0u8;
+    for i in 0..read_up_to {
+        let bit_no = i % 8;
+        if bit_no == 0 {
+            mask = reader.read_u8()?;
+        }
+        if mask & (1 << bit_no) != 0 {
+            ret.push(i);
+        }
+    }
+    Ok(ret)
+}
+
 fn gen_error(msg: &str) -> io::Error {
     io::Error::new(io::ErrorKind::Other, msg)
 }
@@ -234,8 +885,8 @@ fn gen_error(msg: &str) -> io::Error {
 #[derive(Default)]
 struct ParsingContext {
     // factions_bytes: usize,
-    heroes_bytes: usize,
-    artifacts_bytes: usize,
+    // heroes_bytes: usize,
+    // artifacts_bytes: usize,
     resources_bytes: usize,
     skills_bytes: usize,
     spells_bytes: usize,
@@ -281,8 +932,8 @@ impl ParsingContext {
         ctx.level_ROE = true;
 
         // ctx.factions_bytes = 1;
-        ctx.heroes_bytes = 16;
-        ctx.artifacts_bytes = 16;
+        // ctx.heroes_bytes = 16;
+        // ctx.artifacts_bytes = 16;
         ctx.skills_bytes = 4;
         ctx.resources_bytes = 4;
         ctx.spells_bytes = 9;
@@ -325,10 +976,10 @@ impl ParsingContext {
 
             ctx.heroes_count = 156; // + Conflux and campaign heroes
             ctx.heroes_portraits_count = 159; // +_kendal, +young Cristian, +Ordwald
-            ctx.heroes_bytes = 20;
+                                              // ctx.heroes_bytes = 20;
 
             ctx.artifacts_count = 129; // + Armaggedon Blade and Vial of Dragon Blood
-            ctx.artifacts_bytes = 17;
+                                       // ctx.artifacts_bytes = 17;
 
             ctx.artifact_identifier_invalid = 0xffff; // Now uses 2 bytes / object
             ctx.creature_identifier_invalid = 0xffff; // Now uses 2 bytes / object
@@ -338,7 +989,7 @@ impl ParsingContext {
             ctx.level_SOD = true;
 
             ctx.artifacts_count = 144; // + _combined artifacts + 3 unfinished artifacts (required for some maps)
-            ctx.artifacts_bytes = 18;
+                                       // ctx.artifacts_bytes = 18;
 
             ctx.heroes_portraits_count = 163; // +Finneas +young Gem +young Sandro +young Yog
 
@@ -352,8 +1003,8 @@ impl ParsingContext {
             //ctxresult.levelHOTA2 = hotaVersion > 1; // HOTA2 seems to be identical to HOTA1 so far
             ctx.level_HOTA3 = hota_version > 2;
 
-            ctx.artifacts_bytes = 21;
-            ctx.heroes_bytes = 23;
+            // ctx.artifacts_bytes = 21;
+            // ctx.heroes_bytes = 23;
 
             ctx.terrains_count = 12; // +Highlands +Wasteland
             ctx.skills_count = 29; // + Interference

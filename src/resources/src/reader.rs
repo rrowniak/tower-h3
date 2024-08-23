@@ -45,11 +45,11 @@ impl BinaryDataReader {
     }
 
     // Read a single u16 assuming little-endian byte order
-    // pub fn read_u16_le(&mut self) -> io::Result<u16> {
-    //     let mut buffer = [0u8; 2];
-    //     self.cursor.read_exact(&mut buffer)?;
-    //     Ok((buffer[1] as u16) << 8 | buffer[0] as u16)
-    // }
+    pub fn read_u16_le(&mut self) -> io::Result<u16> {
+        let mut buffer = [0u8; 2];
+        self.cursor.read_exact(&mut buffer)?;
+        Ok((buffer[1] as u16) << 8 | buffer[0] as u16)
+    }
 
     // Read a single u32 assuming little-endian byte order
     pub fn read_u32_le(&mut self) -> io::Result<u32> {
@@ -108,6 +108,56 @@ impl BinaryDataReader {
 
     pub fn skip_n(&mut self, n: usize) {
         self.cursor.set_position(self.cursor.position() + n as u64)
+    }
+
+    pub fn dump_hex(&mut self, before: usize, after: usize) -> io::Result<()> {
+        let original_position = self.cursor.position();
+        // Calculate start and end positions
+        let start = original_position.saturating_sub(before as u64);
+        let end = (original_position + after as u64).min(self.cursor.get_ref().len() as u64);
+        // Seek to the start position
+        self.cursor.set_position(start);
+
+        // Read the necessary bytes
+        let mut buffer = vec![0; (end - start) as usize];
+        self.cursor.read_exact(&mut buffer)?;
+
+        // Print out the hex dump
+        let mut start_indx = 0;
+        for (i, byte) in buffer.iter().enumerate() {
+            if i % 16 == 0 {
+                print!("\n{:08x}: ", start + i as u64); // Print the address offset
+                start_indx = i;
+            }
+            print!("{:02x} ", byte); // Print the byte in hex format
+
+            // For better readability, print the ASCII representation at the end of each line
+            if i % 16 == 15 || i == buffer.len() - 1 {
+                let remaining = 15 - (i % 16);
+                for _ in 0..remaining {
+                    print!("   "); // Align the ASCII representation
+                }
+                print!("| ");
+                for j in start_indx..=i {
+                    let c = buffer[j] as char;
+                    if c.is_ascii_graphic() || c.is_ascii_whitespace() {
+                        if ['\n', '\t', '\r'].contains(&c) {
+                            print!(".");
+                        } else {
+                            print!("{}", c);
+                        }
+                    } else {
+                        print!(".");
+                    }
+                }
+                print!(" |");
+            }
+        }
+        println!("");
+
+        // restore original position
+        self.cursor.set_position(original_position);
+        Ok(())
     }
 }
 
