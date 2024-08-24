@@ -18,10 +18,10 @@ pub enum ObjectType {
     SwanPond,
     CoverOfDarkness,
     CreatureBank,
-    CreatureGenerator1,
-    CreatureGenerator2,
-    CreatureGenerator3,
-    CreatureGenerator4,
+    CreatureGenerator1{owner: Option<Ownership>},
+    CreatureGenerator2{owner: Option<Ownership>},
+    CreatureGenerator3{owner: Option<Ownership>},
+    CreatureGenerator4{owner: Option<Ownership>},
     CursedGround1,
     Corpse,
     MarlettoTower,
@@ -35,14 +35,14 @@ pub enum ObjectType {
     FountainOfYouth,
     GardenOfRevelation,
     Garrison,
-    Hero,
+    Hero(HeroData),
     HillFort,
     Grail,
     HutOfMagi,
     IdolOfFortune,
     LeanTo,
     LibraryOfEnlightenment,
-    Lighthouse,
+    Lighthouse{owner: Option<Ownership>},
     MonolithOneWayEntrance,
     MonolithOneWayExit,
     MonolithTwoWay,
@@ -53,7 +53,7 @@ pub enum ObjectType {
     MarketOfTime,
     MercenaryCamp,
     Mermaid,
-    Mine,
+    Mine(MineData),
     Monster(MonsterData),
     MysticalGarden,
     Oasis,
@@ -62,7 +62,7 @@ pub enum ObjectType {
     OceanBottle,
     PillarOfFire,
     StarAxis,
-    Prison,
+    Prison(HeroData),
     PyramidOrWogObject, //subtype 0 for pyramid, >0 for Wog object
     RallyFlag,
     RandomArt,
@@ -70,7 +70,7 @@ pub enum ObjectType {
     RandomMinorArt,
     RandomMajorArt,
     RandomRelicArt,
-    RandomHero,
+    RandomHero(HeroData),
     RandomMonster(MonsterData),
     RandomMonsterL1(MonsterData),
     RandomMonsterL2(MonsterData),
@@ -87,7 +87,7 @@ pub enum ObjectType {
     Crypt,
     Shipwreck,
     ShipwreckSurvivor,
-    Shipyard,
+    Shipyard{owner: Option<Ownership>},
     ShrineOfMagicIncantation,
     ShrineOfMagicGesture,
     ShrineOfMagicThought,
@@ -166,7 +166,7 @@ pub enum ObjectType {
     RandomDwellingLvl,     //subtype = creature level
     RandomDwellingFaction, //subtype = faction
     Garrison2,
-    AbandonedMine,
+    AbandonedMine(MineData),
     TradingPostSnow,
     CloverField,
     CursedGround2,
@@ -199,10 +199,10 @@ impl ObjectType {
             14 => SwanPond,
             15 => CoverOfDarkness,
             16 => CreatureBank,
-            17 => CreatureGenerator1,
-            18 => CreatureGenerator2,
-            19 => CreatureGenerator3,
-            20 => CreatureGenerator4,
+            17 => CreatureGenerator1{owner: None},
+            18 => CreatureGenerator2{owner: None},
+            19 => CreatureGenerator3{owner: None},
+            20 => CreatureGenerator4{owner: None},
             21 => CursedGround1,
             22 => Corpse,
             23 => MarlettoTower,
@@ -216,14 +216,14 @@ impl ObjectType {
             31 => FountainOfYouth,
             32 => GardenOfRevelation,
             33 => Garrison,
-            34 => Hero,
+            34 => Hero(HeroData::default()),
             35 => HillFort,
             36 => Grail,
             37 => HutOfMagi,
             38 => IdolOfFortune,
             39 => LeanTo,
             41 => LibraryOfEnlightenment,
-            42 => Lighthouse,
+            42 => Lighthouse{owner: None},
             43 => MonolithOneWayEntrance,
             44 => MonolithOneWayExit,
             45 => MonolithTwoWay,
@@ -234,7 +234,7 @@ impl ObjectType {
             50 => MarketOfTime,
             51 => MercenaryCamp,
             52 => Mermaid,
-            53 => Mine,
+            53 => Mine(MineData::default()),
             54 => Monster(MonsterData::default()),
             55 => MysticalGarden,
             56 => Oasis,
@@ -243,7 +243,7 @@ impl ObjectType {
             59 => OceanBottle,
             60 => PillarOfFire,
             61 => StarAxis,
-            62 => Prison,
+            62 => Prison(HeroData::default()),
             63 => PyramidOrWogObject, //subtype 0 for pyramid, >0 for Wog object
             64 => RallyFlag,
             65 => RandomArt,
@@ -251,7 +251,7 @@ impl ObjectType {
             67 => RandomMinorArt,
             68 => RandomMajorArt,
             69 => RandomRelicArt,
-            70 => RandomHero,
+            70 => RandomHero(HeroData::default()),
             71 => RandomMonster(MonsterData::default()),
             72 => RandomMonsterL1(MonsterData::default()),
             73 => RandomMonsterL2(MonsterData::default()),
@@ -268,7 +268,7 @@ impl ObjectType {
             84 => Crypt,
             85 => Shipwreck,
             86 => ShipwreckSurvivor,
-            87 => Shipyard,
+            87 => Shipyard{owner: None},
             88 => ShrineOfMagicIncantation,
             89 => ShrineOfMagicGesture,
             90 => ShrineOfMagicThought,
@@ -347,7 +347,7 @@ impl ObjectType {
             217 => RandomDwellingLvl,     //subtype = creature level
             218 => RandomDwellingFaction, //subtype = faction
             219 => Garrison2,
-            220 => AbandonedMine,
+            220 => AbandonedMine(MineData::default()),
             221 => TradingPostSnow,
             222 => CloverField,
             223 => CursedGround2,
@@ -366,7 +366,13 @@ impl ObjectType {
 }
 
 #[derive(Debug, Default)]
-pub struct EventData {}
+pub struct EventData {
+    pub available_for: Vec<Player>,
+    pub computer_can_activate: bool,
+    pub human_can_activate: bool,
+    pub remove_after_visit: bool,
+    pub box_content: Option<BoxContent>,
+}
 
 #[derive(Debug, Default)]
 pub struct MonsterData {
@@ -383,4 +389,30 @@ pub struct MonsterData {
     pub join_percentage: Option<u32>,
     pub upgraded_creatures: Option<u32>,
     pub creatures_on_battle: Option<u32>,
+}
+
+#[derive(Debug, Default)]
+pub struct MineData {
+    pub owner: Option<Ownership>,
+    pub abandoned_resources: Vec<Resource>,
+}
+
+#[derive(Debug, Default)]
+pub struct HeroData {
+    pub quest_id: u32,
+    pub owner: Option<Ownership>,
+    pub hero_id: u32,
+    pub name: Option<String>,
+    pub experience: Option<u32>,
+    pub portrait_id: Option<u8>,
+    pub secondary_skills: Vec<SecSkill>,
+    pub garison: Vec<CreatureSlot>,
+    pub army_formation: u8,
+    pub artifacts: Vec<HeroesArtifact>,
+    pub artifacts_in_bag: Vec<ArtifactId>,
+    pub patrol_radius: u8,
+    pub custom_biography: Option<String>,
+    pub gender: Option<Gender>,
+    pub custom_spells: Vec<u8>,
+    pub custom_primary_skills: Option<PrimarySkills>,
 }

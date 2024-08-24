@@ -1,5 +1,8 @@
 use std::collections::HashMap;
 
+use Player::*;
+pub const ALL_PLAYERS: [Player; 8] = [Red, Blue, Tan, Green, Orange, Purple, Teal, Pink];
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub enum Format {
     #[default]
@@ -169,7 +172,7 @@ pub struct Info {
     pub hero_level_limit: Option<usize>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum Resource {
     Wood,
     Mercury,
@@ -178,7 +181,12 @@ pub enum Resource {
     Crystal,
     Gems,
     Gold,
+    Mithril,
 }
+use Resource::*;
+pub const ALL_RESOURCES: [Resource; 7] = [Wood, Mercury, Ore, Sulfur, Crystal, Gems, Gold];
+pub const ALL_RESOURCES_WOG: [Resource; 8] =
+    [Wood, Mercury, Ore, Sulfur, Crystal, Gems, Gold, Mithril];
 
 impl Resource {
     pub fn from(code: u8) -> Option<Self> {
@@ -191,6 +199,7 @@ impl Resource {
             4 => Some(Crystal),
             5 => Some(Gems),
             6 => Some(Gold),
+            7 => Some(Mithril),
             _ => None,
         }
     }
@@ -208,6 +217,9 @@ pub enum Building {
 
 #[derive(Debug)]
 pub struct ArtifactId(pub u32);
+
+#[derive(Debug)]
+pub struct SpellId(pub u32);
 
 #[derive(Debug)]
 pub enum SpecialVictoryCondition {
@@ -335,9 +347,9 @@ impl SecSkillLevel {
     pub fn from(code: u8) -> Option<Self> {
         use SecSkillLevel::*;
         match code {
-            0 => Some(Basic),
-            1 => Some(Advanced),
-            2 => Some(Expert),
+            1 => Some(Basic),
+            2 => Some(Advanced),
+            3 => Some(Expert),
             _ => None,
         }
     }
@@ -525,6 +537,59 @@ pub struct Object {
 
 #[derive(Debug)]
 pub struct ResourcePack(pub [u32; 7]);
+
+#[derive(Debug)]
+pub struct CreatureId(pub u16);
+
+#[derive(Debug)]
+pub struct CreatureSlot {
+    pub slot_num: u8,
+    pub creature: Option<CreatureId>,
+    pub amount: u32,
+}
+
+#[derive(Debug)]
+pub struct CreatureGuard {
+    pub message: String,
+    pub slot: Vec<CreatureSlot>,
+}
+
+#[derive(Debug)]
+pub struct BoxContent {
+    pub guards: Option<CreatureGuard>,
+    pub reward_experience: u32,
+    pub reward_mana_diff: i32,
+    pub reward_next_battle_morale: i8,
+    pub reward_next_battle_luck: i8,
+    pub reward_resources: ResourcePack,
+    pub reward_primary_skills: PrimarySkills,
+    pub reward_secondary_skills: Vec<SecSkill>,
+    pub reward_artifacts: Vec<ArtifactId>,
+    pub reward_spells: Vec<SpellId>,
+    pub reward_creatures: Vec<(CreatureId, u32)>,
+}
+
+#[derive(Debug)]
+pub enum Ownership {
+    Spectator,
+    CannotDetermine,
+    Unflaggable,
+    Player(Player),
+}
+
+impl Ownership {
+    pub fn from(code: u32) -> Option<Self> {
+        use Ownership::*;
+        match code {
+            252 => Some(Spectator),
+            253 => Some(CannotDetermine),
+            254 => Some(Unflaggable),
+            255 => None,
+            p if p < ALL_PLAYERS.len() as u32 => Some(Player(ALL_PLAYERS[p as usize])),
+            _ => None,
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct Event {}
