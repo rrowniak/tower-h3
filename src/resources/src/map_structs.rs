@@ -215,7 +215,7 @@ pub enum Building {
     Castle,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default, PartialEq, Eq)]
 pub struct ArtifactId(pub u32);
 
 #[derive(Debug)]
@@ -373,12 +373,26 @@ pub enum Gender {
     Female,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default, PartialEq, Eq)]
 pub struct PrimarySkills {
     pub attack: u32,
     pub defence: u32,
     pub spell_power: u32,
     pub knowledge: u32,
+}
+
+impl PrimarySkills {
+    pub fn from(code: u8, level: u32) -> Self {
+        let mut skills = Self::default();
+        match code {
+            0 => skills.attack = level,
+            1 => skills.defence = level,
+            2 => skills.spell_power = level,
+            3 => skills.knowledge = level,
+            _ => {}
+        }
+        skills
+    }
 }
 
 #[derive(Debug)]
@@ -535,10 +549,10 @@ pub struct Object {
     pub obj_type: ObjectType,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default, PartialEq, Eq)]
 pub struct ResourcePack(pub [u32; 7]);
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct CreatureId(pub u16);
 
 #[derive(Debug)]
@@ -554,7 +568,23 @@ pub struct CreatureGuard {
     pub slot: Vec<CreatureSlot>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
+pub enum ArmyFormation {
+    #[default]
+    Loose,
+    Tight,
+}
+
+impl ArmyFormation {
+    pub fn from(code: u8) -> Self {
+        match code {
+            0 => ArmyFormation::Loose,
+            _ => ArmyFormation::Tight,
+        }
+    }
+}
+
+#[derive(Debug, Default)]
 pub struct BoxContent {
     pub guards: Option<CreatureGuard>,
     pub reward_experience: u32,

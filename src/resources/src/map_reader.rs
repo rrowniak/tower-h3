@@ -1,3 +1,5 @@
+use crate::map_buildings::*;
+use crate::map_obj_type::*;
 use crate::map_structs::*;
 use crate::reader::BinaryDataReader;
 use std::io;
@@ -697,7 +699,6 @@ fn parse_objects(
 ) -> io::Result<Vec<Object>> {
     let mut ret = Vec::new();
     let amount = reader.read_u32_le()?;
-    use crate::map_obj_type::ObjectType;
     for _ in 0..amount {
         reader.dump_hex(0, 16 * 4)?;
         let position = read_coord(reader)?;
@@ -730,7 +731,7 @@ fn parse_objects(
                     m.id = reader.read_u32_le()?;
                 }
                 m.amount = reader.read_u16_le()? as u32;
-                println!("amount = {}", m.amount);
+                // println!("amount = {}", m.amount);
                 m.character = reader.read_u8()?;
                 if reader.read_bool()? {
                     m.message = Some(reader.read_string_le()?);
@@ -758,7 +759,7 @@ fn parse_objects(
                         v => Some(v),
                     };
                 }
-                println!("{m:?}");
+                // println!("{m:?}");
             }
             Event(ref mut ev) => {
                 ev.box_content = Some(read_box_content(reader, ctx)?);
@@ -819,7 +820,7 @@ fn parse_objects(
                 if reader.read_bool()? {
                     h.garison = read_creature_set(reader, ctx)?;
                 }
-                h.army_formation = reader.read_u8()?;
+                h.army_formation = ArmyFormation::from(reader.read_u8()?);
                 (h.artifacts, h.artifacts_in_bag) = read_heroes_artifacts(reader, ctx)?;
                 h.patrol_radius = reader.read_u8()?;
                 if ctx.level_AB {
@@ -853,6 +854,151 @@ fn parse_objects(
                     }
                 }
                 reader.skip_n(16);
+            }
+            Artifact(ref mut guards)
+            | RandomArt(ref mut guards)
+            | RandomTreasureArt(ref mut guards)
+            | RandomMinorArt(ref mut guards)
+            | RandomMajorArt(ref mut guards)
+            | RandomRelicArt(ref mut guards) => {
+                *guards = read_message_and_guards(reader, ctx)?;
+            }
+            SpellScroll(ref mut s) => {
+                s.guards = read_message_and_guards(reader, ctx)?;
+                s.spell_scroll_id = reader.read_u32_le()?;
+            }
+            Resource(ref mut r) | RandomResource(ref mut r) => {
+                r.guards = read_message_and_guards(reader, ctx)?;
+                r.amount = reader.read_u32_le()?;
+                reader.skip_n(4);
+            }
+            Sign(ref mut msg) | OceanBottle(ref mut msg) => {
+                *msg = reader.read_string_le()?;
+                reader.skip_n(4);
+            }
+            SeerHut(ref mut vec) => {
+                let mut quest_cnt = 1;
+                if ctx.level_HOTA3 {
+                    quest_cnt = reader.read_u32_le()?;
+                }
+                for _ in 0..quest_cnt {
+                    vec.push(read_seer_hut_quest(reader, ctx)?);
+                }
+                if ctx.level_HOTA3 {
+                    let repeateable_quests = reader.read_u32_le()?;
+                    for _ in 0..repeateable_quests {
+                        let mut q = read_seer_hut_quest(reader, ctx)?;
+                        q.repeateable = true;
+                        vec.push(q);
+                    }
+                }
+                reader.skip_n(2);
+            }
+            WitchHut {
+                ref mut secondary_skills,
+            } => {
+                if ctx.level_AB {
+                    *secondary_skills = map_bits_to_numbers(reader, ctx.skills_count as u8)?;
+                }
+            }
+            Scholar(ref mut s) => {
+                let bonus_type = reader.read_u8()?;
+                let bonus_id = reader.read_u8()?;
+                *s = ScholarBonus::from(bonus_type, bonus_id);
+                reader.skip_n(6);
+            }
+            Garrison(ref mut d) | Garrison2(ref mut d) => {
+                d.owner = Ownership::from(reader.read_u32_le()?);
+                d.guards = read_creature_set(reader, ctx)?;
+                if ctx.level_AB {
+                    d.removable_units = reader.read_bool()?;
+                } else {
+                    d.removable_units = true;
+                }
+                reader.skip_n(8);
+            }
+            Town(ref mut d) | RandomTown(ref mut d) => {
+                if ctx.level_AB {
+                    d.id = reader.read_u32_le()?;
+                }
+                d.owner = Ownership::from(reader.read_u8()? as u32);
+                if reader.read_bool()? {
+                    d.name = Some(reader.read_string_le()?);
+                }
+                if reader.read_bool()? {
+                    d.guards = read_creature_set(reader, ctx)?;
+                }
+                d.army_formation = ArmyFormation::from(reader.read_u8()?);
+                if reader.read_bool()? {
+                    // custom buildings
+                    d.built_buildings = read_bitmap_buildings(reader, ctx)?;
+                    d.forbidden_buildings = read_bitmap_buildings(reader, ctx)?;
+                } else {
+                    // standard buildings
+                    if reader.read_bool()? {
+                        d.built_buildings.push(Buildings::Fort);
+                    }
+                    d.built_buildings.push(Buildings::Default);
+                }
+                if ctx.level_AB {
+                    d.obligatory_spells = map_bits_to_numbers(reader, ctx.spells_count as u8)?;
+                }
+                d.possible_spells = map_bits_to_numbers(reader, ctx.spells_count as u8)?;
+                if ctx.level_HOTA1 {
+                    let _spells_research_available = reader.read_bool()?;
+                }
+                let events_cnt = reader.read_u32_le()?;
+                for _ in 0..events_cnt {
+                    let name = reader.read_string_le()?;
+                    let message = reader.read_string_le()?;
+                    let resources = read_resource_pack(reader, ctx)?;
+                    let players = map_bits_to_objects(reader, &ALL_PLAYERS, 1)?;
+                    let human_affected = if ctx.level_SOD {
+                        reader.read_bool()?
+                    } else {
+                        true
+                    };
+                    let computer_affected = reader.read_bool()?;
+                    let first_occurrence_at = reader.read_u16_le()?;
+                    let next_occurrence = reader.read_u8()?;
+                    reader.skip_n(17);
+                    let new_buildings = read_bitmap_buildings(reader, ctx)?;
+                    let mut new_creatures_at = Vec::with_capacity(7);
+                    for i in 0..7 {
+                        new_creatures_at.push((i as u8, reader.read_u16_le()?));
+                    }
+                    reader.skip_n(4);
+                    d.events.push(TownEvent {
+                        name,
+                        message,
+                        resources,
+                        players,
+                        human_affected,
+                        computer_affected,
+                        first_occurrence_at,
+                        next_occurrence,
+                        new_buildings,
+                        new_creatures_at,
+                    })
+                }
+                if ctx.level_SOD {
+                    let alignment = reader.read_u8()?;
+                    if alignment != 255 {
+                        if (alignment as usize) < ALL_PLAYERS.len() {
+                            d.alignment_to_player = Some(ALL_PLAYERS[alignment as usize]);
+                        }
+                    }
+                }
+                reader.skip_n(3);
+            }
+            ShrineOfMagicIncantation { ref mut spell_id }
+            | ShrineOfMagicGesture { ref mut spell_id }
+            | ShrineOfMagicThought { ref mut spell_id } => *spell_id = reader.read_u32_le()?,
+            PandorasBox(ref mut pand_box) => *pand_box = read_box_content(reader, ctx)?,
+            Grail { ref mut radius } => {
+                if template.subid < 1000 {
+                    *radius = reader.read_i32_le()?;
+                }
             }
             _ => {}
         }
@@ -904,6 +1050,8 @@ fn read_box_content(reader: &mut BinaryDataReader, ctx: &ParsingContext) -> io::
         if let Some(creature) = read_creature(reader, ctx)? {
             let amount = reader.read_u16_le()?;
             reward_creatures.push((creature, amount as u32));
+        } else {
+            let _ = reader.read_u16_le()?;
         }
     }
     reader.skip_n(8);
@@ -1062,6 +1210,142 @@ fn read_heroes_artifacts(
         artifacts_in_bag.push(artifact_id);
     }
     Ok((artifacts, artifacts_in_bag))
+}
+
+fn read_seer_hut_quest(
+    reader: &mut BinaryDataReader,
+    ctx: &ParsingContext,
+) -> io::Result<SeerHutData> {
+    let mut mission = QuestMission::default();
+    if ctx.level_AB {
+        mission = read_quest(reader, ctx)?;
+    } else {
+        let art_id = read_artifact_id(reader, ctx)?;
+        if let Some(art_id) = art_id {
+            mission = QuestMission::Artifact(vec![art_id]);
+        }
+    }
+    let mut reward = SeerHutRewardType::default();
+    if mission != QuestMission::NoMission {
+        use SeerHutRewardType::*;
+        let type_id = reader.read_u8()?;
+        reward = SeerHutRewardType::from(type_id);
+        match &mut reward {
+            Nothing => {}
+            Experience(ref mut exp) => *exp = reader.read_u32_le()?,
+            ManaPoints(ref mut mana) => *mana = reader.read_u32_le()?,
+            Morale(ref mut morale) => *morale = reader.read_i8()?,
+            Luck(ref mut luck) => *luck = reader.read_i8()?,
+            Resources(ref mut r) => *r = (reader.read_u8()?, reader.read_u32_le()?),
+            PrimarySkills(ref mut prim) => {
+                *prim = crate::map_structs::PrimarySkills::from(
+                    reader.read_u8()?,
+                    reader.read_u8()? as u32,
+                )
+            }
+            SecondarySkills(ref mut skills) => {
+                let id = reader.read_u8()? as u32;
+                if let Some(level) = SecSkillLevel::from(reader.read_u8()?) {
+                    skills.push(SecSkill { id, level });
+                }
+            }
+            Artifact(ref mut vec) => {
+                if let Some(a) = read_artifact_id(reader, ctx)? {
+                    vec.push(a);
+                }
+            }
+            Spell(ref mut vec) => vec.push(reader.read_u8()?),
+            Creature(ref mut vec) => {
+                if let Some(id) = read_creature(reader, ctx)? {
+                    let amount = reader.read_u16_le()? as u32;
+                    vec.push((id, amount));
+                } else {
+                    let _ = reader.read_u16_le()?;
+                }
+            }
+        }
+    } else {
+        reader.skip_n(1);
+    }
+    Ok(SeerHutData {
+        mission,
+        reward,
+        ..Default::default()
+    })
+}
+
+fn read_quest(reader: &mut BinaryDataReader, ctx: &ParsingContext) -> io::Result<QuestMission> {
+    use QuestMission::*;
+    let id = reader.read_u8()?;
+    let mut mission = QuestMission::from(id);
+    match &mut mission {
+        NoMission => {}
+        ExpLevel(ref mut exp) => *exp = reader.read_u32_le()?,
+        PrimarySkill(ref mut prim) => {
+            *prim = PrimarySkills {
+                attack: reader.read_u8()? as u32,
+                defence: reader.read_u8()? as u32,
+                spell_power: reader.read_u8()? as u32,
+                knowledge: reader.read_u8()? as u32,
+            }
+        }
+        KillHero(ref mut hero_id) => *hero_id = reader.read_u32_le()?,
+        KillCreature(ref mut creat_id) => *creat_id = reader.read_u32_le()?,
+        Artifact(ref mut v) => {
+            let amount = reader.read_u8()? as usize;
+            for _ in 0..amount {
+                if let Some(id) = read_artifact_id(reader, ctx)? {
+                    v.push(id);
+                }
+            }
+        }
+        Army(ref mut a) => {
+            let amount = reader.read_u8()?;
+            for _ in 0..amount {
+                if let Some(id) = read_creature(reader, ctx)? {
+                    a.push((id, reader.read_u16_le()? as u32));
+                } else {
+                    let _ = reader.read_u16_le()?;
+                }
+            }
+        }
+        Resources(ref mut r) => {
+            *r = read_resource_pack(reader, ctx)?;
+        }
+        Hero(ref mut id) => *id = reader.read_u8()?,
+        Player(ref mut pl) => {
+            let id = reader.read_u8()? as usize;
+            if id < ALL_PLAYERS.len() {
+                *pl = Some(ALL_PLAYERS[id]);
+            }
+        }
+        HOTAMulti => {
+            let sub_mission = reader.read_u32_le()?;
+            if sub_mission == 0 {
+                let heroes_count = reader.read_u32_le()?;
+                assert!(heroes_count < 256);
+                let heroes = map_bits_to_numbers(reader, heroes_count as u8)?;
+                return Ok(HOTAHeroClass(heroes));
+            } else if sub_mission == 1 {
+                return Ok(HOTAReachDate(reader.read_u32_le()?));
+            }
+        }
+        Keymaster => {}
+        HOTAHeroClass(_) => {}
+        HOTAReachDate(_) => {}
+    }
+    Ok(mission)
+}
+
+fn read_bitmap_buildings(
+    reader: &mut BinaryDataReader,
+    ctx: &ParsingContext,
+) -> io::Result<Vec<Buildings>> {
+    assert!(ctx.buildings_bytes < 256);
+    Ok(map_bits_to_numbers(reader, ctx.buildings_bytes as u8)?
+        .iter()
+        .map(|code| Buildings::from(*code as i8 as i32))
+        .collect::<Vec<_>>())
 }
 
 /// Read a byte and collect an item from `object`

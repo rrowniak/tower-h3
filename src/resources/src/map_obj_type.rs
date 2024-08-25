@@ -1,4 +1,5 @@
 use crate::map_structs::*;
+use crate::map_buildings::*;
 
 #[derive(Debug, Default)]
 pub enum ObjectType {
@@ -6,8 +7,8 @@ pub enum ObjectType {
     AltarOfSacrifice,
     AnchorPoint,
     Arena,
-    Artifact,
-    PandorasBox,
+    Artifact(Option<CreatureGuard>),
+    PandorasBox(BoxContent),
     BlackMarket,
     Boat,
     Borderguard,
@@ -34,10 +35,10 @@ pub enum ObjectType {
     FountainOfFortune,
     FountainOfYouth,
     GardenOfRevelation,
-    Garrison,
+    Garrison(GarrisonData),
     Hero(HeroData),
     HillFort,
-    Grail,
+    Grail{radius: i32},
     HutOfMagi,
     IdolOfFortune,
     LeanTo,
@@ -59,46 +60,46 @@ pub enum ObjectType {
     Oasis,
     Obelisk,
     RedwoodObservatory,
-    OceanBottle,
+    OceanBottle(String),
     PillarOfFire,
     StarAxis,
     Prison(HeroData),
     PyramidOrWogObject, //subtype 0 for pyramid, >0 for Wog object
     RallyFlag,
-    RandomArt,
-    RandomTreasureArt,
-    RandomMinorArt,
-    RandomMajorArt,
-    RandomRelicArt,
+    RandomArt(Option<CreatureGuard>),
+    RandomTreasureArt(Option<CreatureGuard>),
+    RandomMinorArt(Option<CreatureGuard>),
+    RandomMajorArt(Option<CreatureGuard>),
+    RandomRelicArt(Option<CreatureGuard>),
     RandomHero(HeroData),
     RandomMonster(MonsterData),
     RandomMonsterL1(MonsterData),
     RandomMonsterL2(MonsterData),
     RandomMonsterL3(MonsterData),
     RandomMonsterL4(MonsterData),
-    RandomResource,
-    RandomTown,
+    RandomResource(ResourceData),
+    RandomTown(TownData),
     RefugeeCamp,
-    Resource,
+    Resource(ResourceData),
     Sanctuary,
-    Scholar,
+    Scholar(ScholarBonus),
     SeaChest,
-    SeerHut,
+    SeerHut(Vec<SeerHutData>),
     Crypt,
     Shipwreck,
     ShipwreckSurvivor,
     Shipyard{owner: Option<Ownership>},
-    ShrineOfMagicIncantation,
-    ShrineOfMagicGesture,
-    ShrineOfMagicThought,
-    Sign,
+    ShrineOfMagicIncantation{spell_id: u32},
+    ShrineOfMagicGesture{spell_id: u32},
+    ShrineOfMagicThought{spell_id: u32},
+    Sign(String),
     Sirens,
-    SpellScroll,
+    SpellScroll(SpellScrollData),
     Stables,
     Tavern,
     Temple,
     DenOfThieves,
-    Town,
+    Town(TownData),
     TradingPost,
     LearningStone,
     TreasureChest,
@@ -113,7 +114,7 @@ pub enum ObjectType {
     WateringHole,
     Whirlpool,
     Windmill,
-    WitchHut,
+    WitchHut{secondary_skills: Vec<u8>},
     Brush, // Todo: How does it look like?
     Bush,
     Cactus,
@@ -165,7 +166,7 @@ pub enum ObjectType {
     RandomDwelling,
     RandomDwellingLvl,     //subtype = creature level
     RandomDwellingFaction, //subtype = faction
-    Garrison2,
+    Garrison2(GarrisonData),
     AbandonedMine(MineData),
     TradingPostSnow,
     CloverField,
@@ -187,8 +188,8 @@ impl ObjectType {
             2 => AltarOfSacrifice,
             3 => AnchorPoint,
             4 => Arena,
-            5 => Artifact,
-            6 => PandorasBox,
+            5 => Artifact(None),
+            6 => PandorasBox(BoxContent::default()),
             7 => BlackMarket,
             8 => Boat,
             9 => Borderguard,
@@ -215,10 +216,10 @@ impl ObjectType {
             30 => FountainOfFortune,
             31 => FountainOfYouth,
             32 => GardenOfRevelation,
-            33 => Garrison,
+            33 => Garrison(GarrisonData::default()),
             34 => Hero(HeroData::default()),
             35 => HillFort,
-            36 => Grail,
+            36 => Grail{radius: 0},
             37 => HutOfMagi,
             38 => IdolOfFortune,
             39 => LeanTo,
@@ -240,46 +241,46 @@ impl ObjectType {
             56 => Oasis,
             57 => Obelisk,
             58 => RedwoodObservatory,
-            59 => OceanBottle,
+            59 => OceanBottle(String::new()),
             60 => PillarOfFire,
             61 => StarAxis,
             62 => Prison(HeroData::default()),
             63 => PyramidOrWogObject, //subtype 0 for pyramid, >0 for Wog object
             64 => RallyFlag,
-            65 => RandomArt,
-            66 => RandomTreasureArt,
-            67 => RandomMinorArt,
-            68 => RandomMajorArt,
-            69 => RandomRelicArt,
+            65 => RandomArt(None),
+            66 => RandomTreasureArt(None),
+            67 => RandomMinorArt(None),
+            68 => RandomMajorArt(None),
+            69 => RandomRelicArt(None),
             70 => RandomHero(HeroData::default()),
             71 => RandomMonster(MonsterData::default()),
             72 => RandomMonsterL1(MonsterData::default()),
             73 => RandomMonsterL2(MonsterData::default()),
             74 => RandomMonsterL3(MonsterData::default()),
             75 => RandomMonsterL4(MonsterData::default()),
-            76 => RandomResource,
-            77 => RandomTown,
+            76 => RandomResource(ResourceData::default()),
+            77 => RandomTown(TownData::default()),
             78 => RefugeeCamp,
-            79 => Resource,
+            79 => Resource(ResourceData::default()),
             80 => Sanctuary,
-            81 => Scholar,
+            81 => Scholar(ScholarBonus::default()),
             82 => SeaChest,
-            83 => SeerHut,
+            83 => SeerHut(Vec::new()),
             84 => Crypt,
             85 => Shipwreck,
             86 => ShipwreckSurvivor,
             87 => Shipyard{owner: None},
-            88 => ShrineOfMagicIncantation,
-            89 => ShrineOfMagicGesture,
-            90 => ShrineOfMagicThought,
-            91 => Sign,
+            88 => ShrineOfMagicIncantation{spell_id : 0},
+            89 => ShrineOfMagicGesture{spell_id : 0},
+            90 => ShrineOfMagicThought{spell_id : 0},
+            91 => Sign(String::new()),
             92 => Sirens,
-            93 => SpellScroll,
+            93 => SpellScroll(SpellScrollData::default()),
             94 => Stables,
             95 => Tavern,
             96 => Temple,
             97 => DenOfThieves,
-            98 => Town,
+            98 => Town(TownData::default()),
             99 => TradingPost,
             100 => LearningStone,
             101 => TreasureChest,
@@ -294,7 +295,7 @@ impl ObjectType {
             110 => WateringHole,
             111 => Whirlpool,
             112 => Windmill,
-            113 => WitchHut,
+            113 => WitchHut{secondary_skills: Vec::new()},
             114 => Brush, // Todo: How does it look like?
             115 => Bush,
             116 => Cactus,
@@ -346,7 +347,7 @@ impl ObjectType {
             216 => RandomDwelling,
             217 => RandomDwellingLvl,     //subtype = creature level
             218 => RandomDwellingFaction, //subtype = faction
-            219 => Garrison2,
+            219 => Garrison2(GarrisonData::default()),
             220 => AbandonedMine(MineData::default()),
             221 => TradingPostSnow,
             222 => CloverField,
@@ -407,7 +408,7 @@ pub struct HeroData {
     pub portrait_id: Option<u8>,
     pub secondary_skills: Vec<SecSkill>,
     pub garison: Vec<CreatureSlot>,
-    pub army_formation: u8,
+    pub army_formation: ArmyFormation,
     pub artifacts: Vec<HeroesArtifact>,
     pub artifacts_in_bag: Vec<ArtifactId>,
     pub patrol_radius: u8,
@@ -415,4 +416,162 @@ pub struct HeroData {
     pub gender: Option<Gender>,
     pub custom_spells: Vec<u8>,
     pub custom_primary_skills: Option<PrimarySkills>,
+}
+
+#[derive(Default, Debug)]
+pub struct SpellScrollData {
+    pub guards: Option<CreatureGuard>,
+    pub spell_scroll_id: u32,
+}
+
+#[derive(Default, Debug)]
+pub struct ResourceData {
+    pub guards: Option<CreatureGuard>,
+    pub amount: u32,
+}
+
+
+#[derive(Default, Debug, PartialEq, Eq)]
+pub enum QuestMission {
+    #[default]
+    NoMission,
+    ExpLevel(u32),
+    PrimarySkill(PrimarySkills),
+    KillHero(u32),
+    KillCreature(u32),
+    Artifact(Vec<ArtifactId>),
+    Army(Vec<(CreatureId, u32)>),
+    Resources(ResourcePack),
+    Hero(u8),
+    Player(Option<Player>),
+    HOTAMulti,
+    Keymaster,
+    HOTAHeroClass(Vec<u8>),
+    HOTAReachDate(u32),
+}
+
+impl QuestMission {
+    pub fn from(code: u8) -> Self {
+        use QuestMission::*;
+        match code {
+            0 => NoMission,
+            1 => ExpLevel(0),
+            2 => PrimarySkill(PrimarySkills::default()),
+            3 => KillHero(0),
+            4 => KillCreature(0),
+            5 => Artifact(Vec::new()),
+            6 => Army(Vec::new()),
+            7 => Resources(ResourcePack::default()),
+            8 => Hero(0),
+            9 => Player(None),
+            10 => HOTAMulti,
+            11 => Keymaster,
+            12 => HOTAHeroClass(Vec::new()),
+            13 => HOTAReachDate(0),
+            _ => NoMission,
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+pub enum SeerHutRewardType {
+    #[default]
+    Nothing,
+    Experience(u32),
+    ManaPoints(u32),
+    Morale(i8),
+    Luck(i8),
+    Resources((u8, u32)),
+    PrimarySkills(PrimarySkills),
+    SecondarySkills(Vec<SecSkill>),
+    Artifact(Vec<ArtifactId>),
+    Spell(Vec<u8>),
+    Creature(Vec<(CreatureId, u32)>),
+}
+
+impl SeerHutRewardType {
+    pub fn from(code: u8) -> Self {
+        use SeerHutRewardType::*;
+        match code {
+            0 => Nothing,
+            1 => Experience(0),
+            2 => ManaPoints(0),
+            3 => Morale(0),
+            4 => Luck(0),
+            5 => Resources((0, 0)),
+            6 => PrimarySkills(crate::map_structs::PrimarySkills::default()),
+            7 => SecondarySkills(Vec::new()),
+            8 => Artifact(Vec::new()),
+            9 => Spell(Vec::new()),
+            10 => Creature(Vec::new()),
+            _ => Nothing,
+        }
+    }
+}
+#[derive(Default, Debug)]
+pub struct SeerHutData {
+    pub repeateable: bool,
+    pub mission: QuestMission,
+    pub time_limit: Option<u32>,
+    pub is_custom_first: bool,
+    pub is_custom_last: bool,
+    pub is_custom_complete: bool,
+    pub reward: SeerHutRewardType,
+}
+
+#[derive(Default, Debug)]
+pub enum ScholarBonus {
+    PrimarySkill(u8),
+    SecondarySkill(u8),
+    Spell(u8),
+    #[default]
+    Random,
+}
+
+impl ScholarBonus {
+    pub fn from(code: u8, id: u8) -> Self {
+        use ScholarBonus::*;
+        match code {
+            0 => PrimarySkill(id),
+            1 => SecondarySkill(id),
+            2 => Spell(id),
+            0xff => Random,
+            _ => Random,
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct GarrisonData {
+    pub owner: Option<Ownership>,
+    pub guards: Vec<CreatureSlot>,
+    pub removable_units: bool,
+}
+
+#[derive(Debug, Default)]
+pub struct TownEvent {
+    pub name: String,
+    pub message: String,
+    pub resources: ResourcePack,
+    pub players: Vec<Player>,
+    pub human_affected: bool,
+    pub computer_affected: bool,
+    pub first_occurrence_at: u16,
+    pub next_occurrence: u8,
+    pub new_buildings: Vec<Buildings>,
+    pub new_creatures_at: Vec<(u8, u16)>,
+}
+#[derive(Debug, Default)]
+pub struct TownData {
+    pub id: u32,
+    pub owner: Option<Ownership>,
+    pub name: Option<String>,
+    pub guards: Vec<CreatureSlot>,
+    pub army_formation: ArmyFormation, 
+    pub built_buildings: Vec<Buildings>,
+    pub forbidden_buildings: Vec<Buildings>,
+    pub obligatory_spells: Vec<u8>,
+    pub possible_spells: Vec<u8>,
+    pub events: Vec<TownEvent>,
+    pub alignment_to_player: Option<Player>,
 }
