@@ -550,7 +550,7 @@ pub struct Object {
 }
 
 #[derive(Debug, Default, PartialEq, Eq, Copy, Clone)]
-pub struct ResourcePack(pub [u32; 7]);
+pub struct ResourcePack(pub [i32; 7]);
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub struct CreatureId(pub u16);
@@ -621,8 +621,17 @@ impl Ownership {
     }
 }
 
-#[derive(Debug)]
-pub struct Event {}
+#[derive(Debug, Default, Clone)]
+pub struct Event {
+    pub name: String,
+    pub message: String,
+    pub resources: ResourcePack,
+    pub players: Vec<Player>,
+    pub human_affected: bool,
+    pub computer_affected: bool,
+    pub first_occurrence_at: u16,
+    pub next_occurrence: u8,
+}
 
 #[derive(Debug)]
 pub struct Map {

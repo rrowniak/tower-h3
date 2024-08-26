@@ -1043,8 +1043,34 @@ fn parse_objects(
     Ok(ret)
 }
 
-fn parse_events(reader: &mut BinaryDataReader, _ctx: &ParsingContext) -> io::Result<Vec<Event>> {
+fn parse_events(reader: &mut BinaryDataReader, ctx: &ParsingContext) -> io::Result<Vec<Event>> {
     let mut ret = Vec::new();
+    let events_cnt = reader.read_u32_le()?;
+    for _ in 0..events_cnt {
+        let name = reader.read_string_le()?;
+        let message = reader.read_string_le()?;
+        let resources = read_resource_pack(reader, ctx)?;
+        let players = map_bits_to_objects(reader, &ALL_PLAYERS, 1)?;
+        let human_affected = if ctx.level_SOD {
+            reader.read_bool()?
+        } else {
+            true
+        };
+        let computer_affected = reader.read_bool()?;
+        let first_occurrence_at = reader.read_u16_le()?;
+        let next_occurrence = reader.read_u8()?;
+        reader.skip_n(17);
+        ret.push(Event {
+            name,
+            message,
+            resources,
+            players,
+            human_affected,
+            computer_affected,
+            first_occurrence_at,
+            next_occurrence,
+        });
+    }
     Ok(ret)
 }
 
@@ -1204,7 +1230,7 @@ fn read_resource_pack(
 ) -> io::Result<ResourcePack> {
     let mut rpack = [0; 7];
     for r in rpack.iter_mut() {
-        *r = reader.read_u32_le()?;
+        *r = reader.read_i32_le()?;
     }
     Ok(ResourcePack(rpack))
 }
