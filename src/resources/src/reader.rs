@@ -110,42 +110,33 @@ impl BinaryDataReader {
         self.cursor.set_position(self.cursor.position() + n as u64)
     }
 
+    #[allow(dead_code)]
     pub fn dump_hex(&mut self, before: usize, after: usize) -> io::Result<()> {
         let original_position = self.cursor.position();
-        // Calculate start and end positions
         let start = original_position.saturating_sub(before as u64);
         let end = (original_position + after as u64).min(self.cursor.get_ref().len() as u64);
-        // Seek to the start position
         self.cursor.set_position(start);
-
-        // Read the necessary bytes
         let mut buffer = vec![0; (end - start) as usize];
         self.cursor.read_exact(&mut buffer)?;
 
-        // Print out the hex dump
         let mut start_indx = 0;
         for (i, byte) in buffer.iter().enumerate() {
             if i % 16 == 0 {
-                print!("\n{:08x}: ", start + i as u64); // Print the address offset
+                print!("\n{:08x}: ", start + i as u64); // print the address offset
                 start_indx = i;
             }
-            print!("{:02x} ", byte); // Print the byte in hex format
+            print!("{:02x} ", byte); // print the byte in hex format
 
-            // For better readability, print the ASCII representation at the end of each line
             if i % 16 == 15 || i == buffer.len() - 1 {
                 let remaining = 15 - (i % 16);
                 for _ in 0..remaining {
-                    print!("   "); // Align the ASCII representation
+                    print!("   ");
                 }
                 print!("| ");
                 for j in start_indx..=i {
                     let c = buffer[j] as char;
                     if c.is_ascii_graphic() || c == ' ' {
-                        // if ['\n', '\t', '\r'].contains(&c) {
-                            // print!(".");
-                        // } else {
-                            print!("{}", c);
-                        // }
+                        print!("{}", c);
                     } else {
                         print!(".");
                     }
