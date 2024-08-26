@@ -1,7 +1,7 @@
 use crate::map_structs::*;
 use crate::map_buildings::*;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub enum ObjectType {
     #[default]
     AltarOfSacrifice,
@@ -18,7 +18,7 @@ pub enum ObjectType {
     Cartographer,
     SwanPond,
     CoverOfDarkness,
-    CreatureBank,
+    CreatureBank(BankData),
     CreatureGenerator1{owner: Option<Ownership>},
     CreatureGenerator2{owner: Option<Ownership>},
     CreatureGenerator3{owner: Option<Ownership>},
@@ -26,8 +26,8 @@ pub enum ObjectType {
     CursedGround1,
     Corpse,
     MarlettoTower,
-    DerelictShip,
-    DragonUtopia,
+    DerelictShip(BankData),
+    DragonUtopia(BankData),
     Event(EventData),
     EyeOfMagi,
     FaerieRing,
@@ -85,8 +85,8 @@ pub enum ObjectType {
     Scholar(ScholarBonus),
     SeaChest,
     SeerHut(Vec<SeerHutData>),
-    Crypt,
-    Shipwreck,
+    Crypt(BankData),
+    Shipwreck(BankData),
     ShipwreckSurvivor,
     Shipyard{owner: Option<Ownership>},
     ShrineOfMagicIncantation{spell_id: u32},
@@ -161,11 +161,11 @@ pub enum ObjectType {
     RandomMonsterL7(MonsterData),
     BorderGate,
     FreelancersGuild,
-    HeroPlaceholder,
-    QuestGuard,
-    RandomDwelling,
-    RandomDwellingLvl,     //subtype = creature level
-    RandomDwellingFaction, //subtype = faction
+    HeroPlaceholder{owner: Option<Ownership>, hero_id: u32},
+    QuestGuard(QuestMission),
+    RandomDwelling(RandomDwellingData),
+    RandomDwellingLvl(RandomDwellingData),     //subtype = creature level
+    RandomDwellingFaction(RandomDwellingData), //subtype = faction
     Garrison2(GarrisonData),
     AbandonedMine(MineData),
     TradingPostSnow,
@@ -179,6 +179,7 @@ pub enum ObjectType {
     MagicClouds,
     MagicPlains2,
     Rocklands,
+    Unknown(u32),
 }
 
 impl ObjectType {
@@ -199,7 +200,7 @@ impl ObjectType {
             13 => Cartographer,
             14 => SwanPond,
             15 => CoverOfDarkness,
-            16 => CreatureBank,
+            16 => CreatureBank(BankData::default()),
             17 => CreatureGenerator1{owner: None},
             18 => CreatureGenerator2{owner: None},
             19 => CreatureGenerator3{owner: None},
@@ -207,8 +208,8 @@ impl ObjectType {
             21 => CursedGround1,
             22 => Corpse,
             23 => MarlettoTower,
-            24 => DerelictShip,
-            25 => DragonUtopia,
+            24 => DerelictShip(BankData::default()),
+            25 => DragonUtopia(BankData::default()),
             26 => Event(EventData::default()),
             27 => EyeOfMagi,
             28 => FaerieRing,
@@ -266,8 +267,8 @@ impl ObjectType {
             81 => Scholar(ScholarBonus::default()),
             82 => SeaChest,
             83 => SeerHut(Vec::new()),
-            84 => Crypt,
-            85 => Shipwreck,
+            84 => Crypt(BankData::default()),
+            85 => Shipwreck(BankData::default()),
             86 => ShipwreckSurvivor,
             87 => Shipyard{owner: None},
             88 => ShrineOfMagicIncantation{spell_id : 0},
@@ -342,11 +343,11 @@ impl ObjectType {
             164 => RandomMonsterL7(MonsterData::default()),
             212 => BorderGate,
             213 => FreelancersGuild,
-            214 => HeroPlaceholder,
-            215 => QuestGuard,
-            216 => RandomDwelling,
-            217 => RandomDwellingLvl,     //subtype = creature level
-            218 => RandomDwellingFaction, //subtype = faction
+            214 => HeroPlaceholder{owner: None, hero_id: 0},
+            215 => QuestGuard(QuestMission::default()),
+            216 => RandomDwelling(RandomDwellingData::default()),
+            217 => RandomDwellingLvl(RandomDwellingData::default()),     //subtype = creature level
+            218 => RandomDwellingFaction(RandomDwellingData::default()), //subtype = faction
             219 => Garrison2(GarrisonData::default()),
             220 => AbandonedMine(MineData::default()),
             221 => TradingPostSnow,
@@ -360,13 +361,14 @@ impl ObjectType {
             229 => MagicClouds,
             230 => MagicPlains2,
             231 => Rocklands,
+            id if id < 255 => Unknown(id),
             _ => return None,
         };
         Some(ret)
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct EventData {
     pub available_for: Vec<Player>,
     pub computer_can_activate: bool,
@@ -375,7 +377,7 @@ pub struct EventData {
     pub box_content: Option<BoxContent>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct MonsterData {
     pub id: u32,
     pub amount: u32,
@@ -392,13 +394,13 @@ pub struct MonsterData {
     pub creatures_on_battle: Option<u32>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct MineData {
     pub owner: Option<Ownership>,
     pub abandoned_resources: Vec<Resource>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct HeroData {
     pub quest_id: u32,
     pub owner: Option<Ownership>,
@@ -418,21 +420,29 @@ pub struct HeroData {
     pub custom_primary_skills: Option<PrimarySkills>,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct SpellScrollData {
     pub guards: Option<CreatureGuard>,
     pub spell_scroll_id: u32,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct ResourceData {
     pub guards: Option<CreatureGuard>,
     pub amount: u32,
 }
 
+#[derive(Default, Debug, Clone)]
+pub struct QuestMission{
+    pub mission_type: QuestMissionType,
+    pub last_day: i32,
+    pub proposal_message: String,
+    pub progress_message: String,
+    pub completion_message: String,
+}
 
-#[derive(Default, Debug, PartialEq, Eq)]
-pub enum QuestMission {
+#[derive(Default, Debug, PartialEq, Eq, Clone)]
+pub enum QuestMissionType {
     #[default]
     NoMission,
     ExpLevel(u32),
@@ -450,9 +460,9 @@ pub enum QuestMission {
     HOTAReachDate(u32),
 }
 
-impl QuestMission {
+impl QuestMissionType {
     pub fn from(code: u8) -> Self {
-        use QuestMission::*;
+        use QuestMissionType::*;
         match code {
             0 => NoMission,
             1 => ExpLevel(0),
@@ -473,7 +483,7 @@ impl QuestMission {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub enum SeerHutRewardType {
     #[default]
     Nothing,
@@ -508,7 +518,7 @@ impl SeerHutRewardType {
         }
     }
 }
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct SeerHutData {
     pub repeateable: bool,
     pub mission: QuestMission,
@@ -519,7 +529,7 @@ pub struct SeerHutData {
     pub reward: SeerHutRewardType,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub enum ScholarBonus {
     PrimarySkill(u8),
     SecondarySkill(u8),
@@ -541,14 +551,14 @@ impl ScholarBonus {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct GarrisonData {
     pub owner: Option<Ownership>,
     pub guards: Vec<CreatureSlot>,
     pub removable_units: bool,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct TownEvent {
     pub name: String,
     pub message: String,
@@ -561,7 +571,7 @@ pub struct TownEvent {
     pub new_buildings: Vec<Buildings>,
     pub new_creatures_at: Vec<(u8, u16)>,
 }
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct TownData {
     pub id: u32,
     pub owner: Option<Ownership>,
@@ -574,4 +584,25 @@ pub struct TownData {
     pub possible_spells: Vec<u8>,
     pub events: Vec<TownEvent>,
     pub alignment_to_player: Option<Player>,
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct RandomDwellingData {
+    pub owner: Option<Ownership>,
+    pub rnd_info_id: Option<u32>,
+    pub factions: Option<Vec<Town>>,
+    pub rnd_info_min_lev: Option<u8>,
+    pub rnd_info_max_lev: Option<u8>,
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct BankData {
+    // -1 = random, 0-4 = index of possible guards settings
+    pub guards_preset_index: i32,
+    // -1 = random, 0 = never, 1 = always
+    pub upgraded_stack_presence: i8,
+    // different conventions:
+    // empty - either no artefacts or randomply generated
+    // artifact - None - random one should be generated instead
+    pub reward_artifacts: Vec<Option<ArtifactId>>,
 }

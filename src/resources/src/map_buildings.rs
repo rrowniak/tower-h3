@@ -1,4 +1,4 @@
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Copy, Clone)]
 pub enum Buildings {
     #[default]
     Default, // means standard buildings built by default

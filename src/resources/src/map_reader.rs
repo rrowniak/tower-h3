@@ -150,22 +150,10 @@ fn parse_player_info(
         if ctx.level_SOD {
             reader.skip_n(1);
         }
-        // read factions
-        use Town::*;
-        // this is true only for ROE
-        let mut towns = vec![
-            Castle, Rampart, Tower, Inferno, Necropolis, Dungeon, Stronghold, Fortress,
-        ];
-        if ctx.level_AB || ctx.level_SOD || ctx.level_WOG || ctx.level == Format::HOTA {
-            towns.push(Conflux);
-        }
-        if ctx.level == Format::HOTA {
-            towns.push(Cove);
-        }
         // TODO: add support for factory (HOTA4?)
-        let faction_towns = map_bits_to_objects(reader, &towns, ctx.factions_bytes)?;
+        let faction_towns = read_bitmask_factions(reader, ctx)?;
         let is_faction_random = reader.read_bool()?;
-        let all_allowed = is_faction_random && faction_towns.len() == towns.len();
+        let all_allowed = is_faction_random && faction_towns.len() == ctx.factions.len();
         let faction;
         if all_allowed {
             faction = Faction::RandomAll;
@@ -700,7 +688,7 @@ fn parse_objects(
     let mut ret = Vec::new();
     let amount = reader.read_u32_le()?;
     for _ in 0..amount {
-        reader.dump_hex(0, 16 * 4)?;
+        // reader.dump_hex(0, 16 * 4)?;
         let position = read_coord(reader)?;
         let obj_templ_id = reader.read_u32_le()?;
         reader.skip_n(5);
@@ -931,8 +919,8 @@ fn parse_objects(
                 d.army_formation = ArmyFormation::from(reader.read_u8()?);
                 if reader.read_bool()? {
                     // custom buildings
-                    d.built_buildings = read_bitmap_buildings(reader, ctx)?;
-                    d.forbidden_buildings = read_bitmap_buildings(reader, ctx)?;
+                    d.built_buildings = read_bitmask_buildings(reader, ctx)?;
+                    d.forbidden_buildings = read_bitmask_buildings(reader, ctx)?;
                 } else {
                     // standard buildings
                     if reader.read_bool()? {
@@ -962,7 +950,7 @@ fn parse_objects(
                     let first_occurrence_at = reader.read_u16_le()?;
                     let next_occurrence = reader.read_u8()?;
                     reader.skip_n(17);
-                    let new_buildings = read_bitmap_buildings(reader, ctx)?;
+                    let new_buildings = read_bitmask_buildings(reader, ctx)?;
                     let mut new_creatures_at = Vec::with_capacity(7);
                     for i in 0..7 {
                         new_creatures_at.push((i as u8, reader.read_u16_le()?));
@@ -998,6 +986,50 @@ fn parse_objects(
             Grail { ref mut radius } => {
                 if template.subid < 1000 {
                     *radius = reader.read_i32_le()?;
+                }
+            }
+            RandomDwelling(ref mut d) => {
+                d.owner = Ownership::from(reader.read_u32_le()?);
+                d.rnd_info_id = Some(reader.read_u32_le()?);
+                if d.rnd_info_id == Some(0) {
+                    d.factions = Some(read_bitmask_factions(reader, ctx)?);
+                }
+                d.rnd_info_min_lev = Some(reader.read_u8()?);
+                d.rnd_info_max_lev = Some(reader.read_u8()?);
+            }
+            RandomDwellingLvl(ref mut d) => {
+                d.owner = Ownership::from(reader.read_u32_le()?);
+                d.rnd_info_id = Some(reader.read_u32_le()?);
+                if d.rnd_info_id == Some(0) {
+                    d.factions = Some(read_bitmask_factions(reader, ctx)?);
+                }
+            }
+            RandomDwellingFaction(ref mut d) => {
+                d.owner = Ownership::from(reader.read_u32_le()?);
+                d.rnd_info_min_lev = Some(reader.read_u8()?);
+                d.rnd_info_max_lev = Some(reader.read_u8()?);
+            }
+            QuestGuard(ref mut m) => *m = read_quest(reader, ctx)?,
+            HeroPlaceholder {
+                ref mut owner,
+                ref mut hero_id,
+            } => {
+                *owner = Ownership::from(reader.read_u8()? as u32);
+                *hero_id = reader.read_u8()? as u32;
+            }
+            CreatureBank(ref mut b)
+            | DerelictShip(ref mut b)
+            | DragonUtopia(ref mut b)
+            | Crypt(ref mut b)
+            | Shipwreck(ref mut b) => {
+                if ctx.level_HOTA3 {
+                    b.guards_preset_index = reader.read_i32_le()?;
+                    b.upgraded_stack_presence = reader.read_i8()?;
+                    let artifacts_cnt = reader.read_u32_le()?;
+                    for _ in 0..artifacts_cnt {
+                        b.reward_artifacts
+                            .push(read_artifact_id_from_i32(reader, ctx)?);
+                    }
                 }
             }
             _ => {}
@@ -1141,6 +1173,20 @@ fn read_artifact_id(
     }
 }
 
+fn read_artifact_id_from_i32(
+    reader: &mut BinaryDataReader,
+    ctx: &ParsingContext,
+) -> io::Result<Option<ArtifactId>> {
+    let id = reader.read_i32_le()?;
+    if id as u32 == ctx.artifact_identifier_invalid {
+        return Ok(None);
+    }
+    if id == -1 {
+        return Ok(None);
+    }
+    Ok(Some(ArtifactId(id as u32)))
+}
+
 fn read_spell_id(
     reader: &mut BinaryDataReader,
     ctx: &ParsingContext,
@@ -1198,7 +1244,7 @@ fn read_heroes_artifacts(
         }
         ret
     } else {
-        Vec::new()
+        return Ok((Vec::new(), Vec::new()));
     };
     let mut artifacts_in_bag = Vec::new();
     let amount = reader.read_u16_le()?;
@@ -1222,11 +1268,14 @@ fn read_seer_hut_quest(
     } else {
         let art_id = read_artifact_id(reader, ctx)?;
         if let Some(art_id) = art_id {
-            mission = QuestMission::Artifact(vec![art_id]);
+            mission = QuestMission {
+                mission_type: QuestMissionType::Artifact(vec![art_id]),
+                ..Default::default()
+            };
         }
     }
     let mut reward = SeerHutRewardType::default();
-    if mission != QuestMission::NoMission {
+    if mission.mission_type != QuestMissionType::NoMission {
         use SeerHutRewardType::*;
         let type_id = reader.read_u8()?;
         reward = SeerHutRewardType::from(type_id);
@@ -1275,11 +1324,13 @@ fn read_seer_hut_quest(
 }
 
 fn read_quest(reader: &mut BinaryDataReader, ctx: &ParsingContext) -> io::Result<QuestMission> {
-    use QuestMission::*;
+    use QuestMissionType::*;
     let id = reader.read_u8()?;
-    let mut mission = QuestMission::from(id);
-    match &mut mission {
-        NoMission => {}
+    let mut mission_type = QuestMissionType::from(id);
+    match &mut mission_type {
+        NoMission => {
+            return Ok(QuestMission::default());
+        }
         ExpLevel(ref mut exp) => *exp = reader.read_u32_le()?,
         PrimarySkill(ref mut prim) => {
             *prim = PrimarySkills {
@@ -1311,6 +1362,7 @@ fn read_quest(reader: &mut BinaryDataReader, ctx: &ParsingContext) -> io::Result
         }
         Resources(ref mut r) => {
             *r = read_resource_pack(reader, ctx)?;
+            // println!("resources: {r:?}");
         }
         Hero(ref mut id) => *id = reader.read_u8()?,
         Player(ref mut pl) => {
@@ -1325,27 +1377,48 @@ fn read_quest(reader: &mut BinaryDataReader, ctx: &ParsingContext) -> io::Result
                 let heroes_count = reader.read_u32_le()?;
                 assert!(heroes_count < 256);
                 let heroes = map_bits_to_numbers(reader, heroes_count as u8)?;
-                return Ok(HOTAHeroClass(heroes));
+                mission_type = HOTAHeroClass(heroes);
             } else if sub_mission == 1 {
-                return Ok(HOTAReachDate(reader.read_u32_le()?));
+                mission_type = HOTAReachDate(reader.read_u32_le()?);
             }
         }
         Keymaster => {}
         HOTAHeroClass(_) => {}
         HOTAReachDate(_) => {}
     }
-    Ok(mission)
+    let last_day = reader.read_i32_le()?;
+    let proposal_message = reader.read_string_le()?;
+    let progress_message = reader.read_string_le()?;
+    let completion_message = reader.read_string_le()?;
+    Ok(QuestMission {
+        mission_type,
+        last_day,
+        proposal_message,
+        progress_message,
+        completion_message,
+    })
 }
 
-fn read_bitmap_buildings(
+fn read_bitmask_buildings(
     reader: &mut BinaryDataReader,
     ctx: &ParsingContext,
 ) -> io::Result<Vec<Buildings>> {
     assert!(ctx.buildings_bytes < 256);
-    Ok(map_bits_to_numbers(reader, ctx.buildings_bytes as u8)?
+    Ok(map_bits_to_numbers(reader, ctx.buildings_count as u8)?
         .iter()
         .map(|code| Buildings::from(*code as i8 as i32))
         .collect::<Vec<_>>())
+}
+
+fn read_bitmask_factions(
+    reader: &mut BinaryDataReader,
+    ctx: &ParsingContext,
+) -> io::Result<Vec<Town>> {
+    Ok(map_bits_to_objects(
+        reader,
+        &ctx.factions,
+        ctx.factions_bytes,
+    )?)
 }
 
 /// Read a byte and collect an item from `object`
@@ -1404,6 +1477,7 @@ fn gen_error(msg: &str) -> io::Error {
 #[allow(non_snake_case)]
 #[derive(Default)]
 struct ParsingContext {
+    factions: Vec<Town>,
     factions_bytes: usize,
     heroes_bytes: usize,
     artifacts_bytes: usize,
@@ -1450,6 +1524,10 @@ impl ParsingContext {
         ctx.level = map_format;
         // Format::ROE
         ctx.level_ROE = true;
+        use Town::*;
+        ctx.factions = vec![
+            Castle, Rampart, Tower, Inferno, Necropolis, Dungeon, Stronghold, Fortress,
+        ];
 
         ctx.factions_bytes = 1;
         ctx.heroes_bytes = 16;
@@ -1489,6 +1567,7 @@ impl ParsingContext {
         {
             ctx.level_AB = true;
 
+            ctx.factions.push(Conflux);
             ctx.factions_bytes = 2; // + Conflux
             ctx.factions_count = 9;
 
@@ -1522,6 +1601,7 @@ impl ParsingContext {
             ctx.level_HOTA1 = hota_version > 0;
             //ctxresult.levelHOTA2 = hotaVersion > 1; // HOTA2 seems to be identical to HOTA1 so far
             ctx.level_HOTA3 = hota_version > 2;
+            ctx.factions.push(Cove);
 
             ctx.artifacts_bytes = 21;
             ctx.heroes_bytes = 23;

@@ -140,12 +140,12 @@ impl BinaryDataReader {
                 print!("| ");
                 for j in start_indx..=i {
                     let c = buffer[j] as char;
-                    if c.is_ascii_graphic() || c.is_ascii_whitespace() {
-                        if ['\n', '\t', '\r'].contains(&c) {
-                            print!(".");
-                        } else {
+                    if c.is_ascii_graphic() || c == ' ' {
+                        // if ['\n', '\t', '\r'].contains(&c) {
+                            // print!(".");
+                        // } else {
                             print!("{}", c);
-                        }
+                        // }
                     } else {
                         print!(".");
                     }

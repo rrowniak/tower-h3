@@ -215,10 +215,10 @@ pub enum Building {
     Castle,
 }
 
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Default, PartialEq, Eq, Copy, Clone)]
 pub struct ArtifactId(pub u32);
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub struct SpellId(pub u32);
 
 #[derive(Debug)]
@@ -336,7 +336,7 @@ pub struct Rumors {
     pub rumors: Vec<Rumor>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum SecSkillLevel {
     Basic,
     Advanced,
@@ -355,25 +355,25 @@ impl SecSkillLevel {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct SecSkill {
     pub id: u32,
     pub level: SecSkillLevel,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct HeroesArtifact {
     pub artifact_id: ArtifactId,
     pub slot_id: u32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum Gender {
     Male,
     Female,
 }
 
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Default, PartialEq, Eq, Copy, Clone)]
 pub struct PrimarySkills {
     pub attack: u32,
     pub defence: u32,
@@ -549,26 +549,26 @@ pub struct Object {
     pub obj_type: ObjectType,
 }
 
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Default, PartialEq, Eq, Copy, Clone)]
 pub struct ResourcePack(pub [u32; 7]);
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub struct CreatureId(pub u16);
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct CreatureSlot {
     pub slot_num: u8,
     pub creature: Option<CreatureId>,
     pub amount: u32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CreatureGuard {
     pub message: String,
     pub slot: Vec<CreatureSlot>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Copy, Clone)]
 pub enum ArmyFormation {
     #[default]
     Loose,
@@ -584,7 +584,7 @@ impl ArmyFormation {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct BoxContent {
     pub guards: Option<CreatureGuard>,
     pub reward_experience: u32,
@@ -599,7 +599,7 @@ pub struct BoxContent {
     pub reward_creatures: Vec<(CreatureId, u32)>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum Ownership {
     Spectator,
     CannotDetermine,
